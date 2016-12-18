@@ -1,0 +1,286 @@
+package image;
+//****************************************************************************************************
+//  InputPanel.java			Author: Seth Stewart
+//****************************************************************************************************
+
+import java.awt.*;
+import java.awt.image.*;
+import java.awt.event.*;
+import java.io.*;
+import javax.imageio.*;
+import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import java.util.ArrayList;
+import java.lang.reflect.*;
+
+public class InputPanel extends JPanel {
+	public static final long serialVersionUID = 0;
+	private JPanel basicActionsPanel, customActionsPanel;
+	private JScrollPane mainScrollPane;
+	private JButton saveButton, openButton, closeButton, runButton, stepButton;
+	private ArrayList<JButton> opButtons;
+	private ArrayList<Method> operations;
+	private ButtonListener listener;
+	private JCheckBox debugBox;
+	private int currentOperation;
+	
+	public ArrayList<BufferedImage> images;
+	public ArrayList<Mesh> meshes;
+	public ArrayList<Solid> solids;
+	public ArrayList<Integer> ints;
+	public ArrayList<Double> doubles;
+	public ArrayList<String> strings;
+	
+	private ArrayList<OperationPanel> opPanels;
+	private ArrayList<DataPanel> dataPanels;
+	
+	//------------------------------------------------------------------------------------------------
+	//  Constructor: sets up the panel.
+	//------------------------------------------------------------------------------------------------
+	InputPanel() {
+		currentOperation = 0;
+		
+		listener = new ButtonListener();
+		setLayout(new BorderLayout());
+		setPreferredSize(new Dimension(800,600));
+		
+		basicActionsPanel = new JPanel(); {
+			basicActionsPanel.setPreferredSize(new Dimension (300,100));
+			basicActionsPanel.setLayout(new GridLayout(4,4));
+			
+			saveButton = new JButton ("Save");
+			saveButton.addActionListener(listener);
+			saveButton.setToolTipText("Save this image");
+			saveButton.setMnemonic('s');
+			basicActionsPanel.add(saveButton);
+
+			openButton = new JButton ("Open");
+			openButton.addActionListener(listener);
+			openButton.setToolTipText("Load an image");
+			openButton.setMnemonic('o');
+			basicActionsPanel.add(openButton);
+			
+			closeButton = new JButton ("Close");
+			closeButton.addActionListener(listener);
+			closeButton.setToolTipText("Close this image");
+			closeButton.setMnemonic('c');
+			basicActionsPanel.add(closeButton);
+			
+			runButton = new JButton ("Run");
+			runButton.addActionListener(listener);
+			runButton.setToolTipText("Run operations");
+			runButton.setMnemonic('r');
+			basicActionsPanel.add(runButton);
+			
+			stepButton = new JButton ("Step"); // Change highlight in current operation, pane color around changed outputs, etc.
+			stepButton.addActionListener(listener);
+			stepButton.setToolTipText("Step one operation");
+			stepButton.setMnemonic('t');
+			basicActionsPanel.add(stepButton);
+			
+			debugBox = new JCheckBox("Debug", Image.debug);
+			debugBox.addChangeListener(new ItemListener());		
+			basicActionsPanel.add(debugBox);
+			
+			add(basicActionsPanel, BorderLayout.NORTH);	
+		}
+		
+		customActionsPanel = new JPanel(); {
+			opButtons = new ArrayList<JButton>();
+			operations = new ArrayList<Method>();
+
+			try {
+				Method[] methods = Class.forName("image.Image").getDeclaredMethods();
+				for(int i = 0; i < methods.length; i++) {
+					Method m = methods[i];
+					Class<?> retType = m.getReturnType();
+					if(retType != BufferedImage.class && retType != Mesh.class && retType != double.class && retType != int.class && retType != Solid.class)
+						continue;
+					Class<?> params[] = m.getParameterTypes();
+					
+					JButton button = new JButton(m.getName());
+					button.addActionListener(listener);
+					String tip = retType.getSimpleName() + " : " + m.getName() + "(";
+					for(int k = 0; k < params.length; k++) {
+						tip += params[k].getSimpleName();
+						if(k != params.length-1) tip += ", ";
+					}
+					tip += ")";
+					button.setToolTipText(tip);
+					opButtons.add(button);
+					customActionsPanel.add(button);
+					operations.add(m);
+				}
+			}
+			catch(ClassNotFoundException e) {System.err.println(e); } 
+		}
+		
+		dataPanels = new ArrayList<DataPanel>();
+		opPanels = new ArrayList<OperationPanel>();
+		
+		dataPanels.add(new DataPanel());
+		
+		mainScrollPane = new JScrollPane();
+		mainScrollPane.add(dataPanels.get(0));
+		add(mainScrollPane, BorderLayout.CENTER);
+	}
+	
+	private class ItemListener implements ChangeListener {
+		public void stateChanged (ChangeEvent event) {
+			Image.debug = debugBox.isSelected();
+		}
+	}
+	
+	//**************************************************************************************
+	//  Defines a listener for button push events.
+	//**************************************************************************************
+	public class ButtonListener implements ActionListener{
+		public void actionPerformed(ActionEvent event) {
+			Object action = event.getSource();
+
+			int i = opButtons.indexOf(action);
+			if (i != -1) {
+				execute(operations.get(i));
+				return;
+			}
+			
+			if (action == saveButton) {
+				//SaveImage((BufferedImage)images.get(index).get(image.get(index).size()-1));
+			}
+			else if (action == openButton) {
+				BufferedImage im = OpenImage();
+				if(im == null ) return;
+				dataPanels.get(0).add(im);
+			}
+			else if(action == runButton) { 
+				currentOperation = 0;
+				while(step());
+			}
+			else if(action == stepButton) { 
+				step();
+			}
+			revalidate();
+			repaint();
+		}
+	}
+	
+	public void execute(Method m) {
+		Object[] input = dataPanels.get(currentOperation).items.toArray();
+		try {
+			Object result = m.invoke(new Image(), input);
+			dataPanels.get(currentOperation + 1).items.add(result); // SET to single item output
+		}
+		catch(Exception e) { e.printStackTrace(); }
+	}
+	
+	public void addOperation(Method m) {
+		dataPanels.add(new DataPanel(m.getParameterTypes()));
+		opPanels.add(new OperationPanel(m));
+		dataPanels.add(new DataPanel(m.getReturnType()));
+		this.revalidate();
+	}
+	
+	public boolean step() {
+		if(currentOperation >= opPanels.size()) return false;
+		execute(opPanels.get(currentOperation).operation);
+		currentOperation++;
+		return true;
+	}
+	
+	public BufferedImage OpenImage() {
+		BufferedImage inImage = null;
+		JFileChooser chooser = new JFileChooser();
+		int open = chooser.showOpenDialog(null);
+		
+		if (open == JFileChooser.APPROVE_OPTION) {
+			File file = chooser.getSelectedFile();
+			try { inImage = ImageIO.read(file); } catch (Exception e) { e.printStackTrace(); }
+		} 
+		return inImage;
+	}
+	
+	public static void SaveImage(BufferedImage image) {
+		try {
+			JFileChooser chooser = new JFileChooser();
+			int save = chooser.showSaveDialog(null);
+			
+			if (save == JFileChooser.APPROVE_OPTION) {
+				ImageIO.write(image, "jpg", chooser.getSelectedFile());
+			}
+		}
+		catch (IOException exception) {
+			JOptionPane.showMessageDialog(null, "Error Writing to file!");
+		}
+	}
+	
+	private class OperationPanel extends JPanel {
+		public static final long serialVersionUID = 0;
+		public Method operation;
+		public JButton operate, remove;
+		public DataPanel inputs, outputs;
+		public OperationPanel(Method m) {
+			operation = m;
+			operate = new JButton(m.getName());
+			operate.addActionListener(listener);
+			remove = new JButton("Remove");
+			
+			inputs = new DataPanel(m.getParameterTypes());
+			outputs = new DataPanel(m.getReturnType());
+		}
+	}
+	
+	private class DataPanel extends JScrollPane {
+		public static final long serialVersionUID = 0;
+		public ArrayList<NamedPanel> dataPanel;
+		public ArrayList<Object> items;
+		public DataPanel() {
+			items = new ArrayList<Object>();
+		}
+		public DataPanel(Class<?>[] params) {
+			this();
+			for(int i = 0; i < params.length; i++) {
+				try {
+					items.add(params[i].newInstance());
+				}
+				catch(Exception e) { e.printStackTrace(); }
+			}
+		}
+		public DataPanel(Class<?> returnType) {
+			this();
+			try {
+				items.add(returnType.newInstance());
+			}
+			catch(Exception e) { e.printStackTrace(); }
+		}
+		public void add(Object o) {
+			if (o instanceof Class<?>) {
+				
+			}
+			else if (o instanceof Class<?>[]) {
+				
+			}
+		}
+	}
+	
+	private class NamedPanel extends JPanel {
+		public static final long serialVersionUID = 0;
+		public Object item;
+		public JPanel panel;
+		public JLabel label;
+		public JButton save, clear;
+		public NamedPanel(Object item, JPanel panel, JLabel label) {
+			this.item = item;
+			this.label = label;
+		}
+	}
+	
+
+	public void paintComponent(Graphics page) {
+		super.paintComponent(page);
+		// repaint for meshes?
+	}
+}
+	
+
+

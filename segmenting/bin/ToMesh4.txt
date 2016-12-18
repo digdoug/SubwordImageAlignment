@@ -1,0 +1,132 @@
+	
+	public static Mesh toMesh4 (BufferedImage input, int threshold) {
+		//Automatic non-maximal suppression
+		BufferedImage contrast = suppress(edge3(input));
+		ImageArray image = new ImageArray(contrast);
+		int[][][] in = image.array;
+		Mesh mesh = new Mesh();
+		int DONE = 0x0FFFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(in[x][y][0] != DONE && gray (contrast.getRGB(x, y)) > threshold) {
+					int a = x, b = y;
+					int[] left = {0,-1};
+					int[] forward = {1,0};
+					int onStartingSpot = 0;
+					int la = a, lb = b;
+					mesh.startFace();
+					
+					while(onStartingSpot < 5) {
+						//If eye remains on same spot 5x, terminate
+						if(a == x && b == y) 
+							if(la == a && lb == b)
+								onStartingSpot++;
+							else
+								onStartingSpot+=5; // terminate because shape is closed
+								//break;
+						la = a;
+						lb = b;
+						
+						int[][] leftForward = {{a+left[0], b+left[1]},{a+forward[0], b+forward[1]}};
+						//Get color contrast on left side
+						double leftContrast = DONE;
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							//leftContrast = distance(contrast.getRGB(leftForward[0][0], leftForward[0][1]));
+							leftContrast = distance(in[a][b], in[leftForward[0][0]][leftForward[0][1]]);
+						
+						//Needs an affinity for co-linear or closest neighbors 
+						//1st case: left is low contrast and is not formerly occupied: rotate CCW and move to new forward
+						if(leftContrast < threshold) {
+							
+							//Rotate CCW
+							forward[0] = left[0];
+							forward[1] = left[1];
+							if(left[1] == 0) {
+								left[0] = -forward[1];
+								left[1] = -forward[0];
+							}
+							else {
+								left[0] = forward[1];
+								left[1] = forward[0];
+							}
+							//in[a][b][0] = DONE; // added 8/6/07
+							//Move new forward
+							a += forward[0];
+							b += forward[1];
+						}
+						else {
+							// NMS Module
+							 /*
+							double leftContrast2 = -DONE;
+							while(leftContrast2 < leftContrast) {
+								if(b + left[1]*2 < height && b + left[1]*2 >= 0 && a + left[0]*2 < width && a + left[0]*2 >= 0 && in[a+left[0]*2][b+left[1]*2][0] != DONE) {
+									leftContrast2 = ImageArray.colorDistance(in[a][b], in[leftForward[0][0]+left[0]][leftForward[0][1]+left[1]]);
+									if(leftContrast2 > leftContrast) {
+										try {
+											in[a][b][0] =  DONE;
+											}
+										catch(Exception e) {}
+										a += left[0];
+										b += left[1];
+										leftContrast2 = leftContrast;
+									}
+									else break;
+								}
+								else break;
+							}
+							 */
+							// END NMS
+							
+							//Left point is valid high contrast edge
+							try {
+								in[leftForward[0][0]][leftForward[0][1]][0] =  DONE; // mark point to prevent reuse
+							}
+							catch(Exception e) { 
+								break; // added 8/6/07 
+							}
+							//Add left point to mesh as high contrast edge
+							double[] pt = {a+left[0]/2,-(b+left[1]/2),0};
+							if(!mesh.addToFace(pt)) break;
+							
+							//Get forward color contrast
+							double forwardContrast = DONE;
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								forwardContrast = distance(in[a][b], in[leftForward[1][0]][leftForward[1][1]]);
+								
+							//Forward is clear; move forward
+							if(forwardContrast < threshold) {
+								//in[a][b][0] = DONE;
+								a += forward[0];
+								b += forward[1];
+							}
+						//------------------------------
+						
+						//Forward is blocked: Turn CW
+						else {
+							left[0] = forward[0];
+							left[1] = forward[1];
+							if(left[0] == 0) {
+								forward[0] = -left[1];
+								forward[1] = -left[0];
+							}
+							else {
+								forward[0] = left[1];
+								forward[1] = left[0];
+							}
+						}
+						}
+						try {
+					in[a][b][0] = DONE;
+					}
+						catch(Exception e) {}
+					}
+					mesh.endFace();
+				}
+				in[x][y][0] = DONE;
+			}
+		}
+
+		return mesh;
+	}

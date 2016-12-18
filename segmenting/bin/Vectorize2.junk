@@ -1,0 +1,1226 @@
+package image;
+import java.awt.image.BufferedImage;
+import java.awt.Color;
+import java.io.IOException;
+import java.io.PrintWriter;
+import javax.swing.JOptionPane;
+import javax.swing.JFileChooser;
+import java.io.FileFilter;
+import java.util.ArrayList;
+import java.util.LinkedList;
+
+
+/* Vectorization algorithm
+ * Weighted considerations:
+ * Linearity (or curve closeness)
+ * Average difference (contrast)
+ * Anti-alias sharpness
+ * Color closeness per side of region
+ * Material (region) uniformity
+ * Self-similarity
+ * Marching squares mathematical revision: precision! 
+ */
+
+public class Vectorize2 extends BufferedImage {
+
+	private static ImageArray img;
+	public int threshold;
+	public static double maxVal = 0;
+
+	Vectorize2(BufferedImage image) {
+		super(image.getWidth(), image.getHeight(), image.getType());
+		for(int x = 0; x < getWidth(); x++)
+			for(int y = 0; y < getHeight(); y++)
+				setRGB(x,y,image.getRGB(x, y));
+		img = new ImageArray(this);
+	}
+	//Use regionalizer, edge detector, and then vectorizer
+	
+	public static BufferedImage sobel (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		img = new ImageArray(toGray(input));
+		for (int x = 0; x<input.getWidth()-2; x++) {
+			for (int y = 0; y<input.getHeight()-2; y++) {
+				//int[] kernel = input.getRGB(x,y,3,3,new int[9],0,0);
+				double gx = Math.abs(img.array[x][y][1]+img.array[x+1][y][1]*2+img.array[x+2][y][1]-
+						img.array[x][y+2][1]+img.array[x+1][y+2][1]*2+img.array[x+2][y+2][1])/4;
+				double gy = Math.abs(img.array[x][y][1]+img.array[x][y+1][1]*2+img.array[x][y+2][1]-
+						img.array[x+2][y][1]+img.array[x+2][y+1][1]*2+img.array[x+2][y+2][1])/4;
+				int edge = (int)(Math.sqrt((Math.pow(gx,2)+Math.pow(gy,2))/8));
+				//int edge = (int)Math.abs(gx) | (int)Math.abs(gy);
+				int color = (new Color(edge, edge, edge)).getRGB();
+				output.setRGB(x,y,color);
+			}
+		}
+		return output;
+	}
+	
+	public static BufferedImage suppress (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		img = new ImageArray(input);
+		for (int x = 0; x<input.getWidth()-3; x++) {
+			for (int y = 0; y<input.getHeight()-3; y++) {
+				double gx = Math.abs(img.array[x][y][1]+img.array[x+1][y][1]*2+img.array[x+2][y][1]-
+						img.array[x][y+2][1]+img.array[x+1][y+2][1]*2+img.array[x+2][y+2][1])/4;
+				double gy = Math.abs(img.array[x][y][1]+img.array[x][y+1][1]*2+img.array[x][y+2][1]-
+						img.array[x+2][y][1]+img.array[x+2][y+1][1]*2+img.array[x+2][y+2][1])/4;
+				boolean vmax=false, hmax=false;
+				if (img.array[x+1][y][0] < img.array[x+1][y+1][0] && img.array[x+1][y+2][0] <= img.array[x+1][y+1][0]) 
+					vmax = true;
+				if (img.array[x][y+1][0] < img.array[x+1][y+1][0] && img.array[x+2][y+1][0] <= img.array[x+1][y+1][0])
+					hmax = true;
+				int result = img.array[x+1][y+1][0];
+				if (((gx>gy && hmax) || (gy>gx && vmax)) || (hmax && vmax)) { 
+					if(result > Color.white.getRGB())
+						result =  Color.white.getRGB();
+					output.setRGB(x+1,y+1,result);
+				}
+				else
+					output.setRGB(x+1,y+1,Color.black.getRGB());
+			}
+		}
+		return output;
+	}
+	
+	public static BufferedImage edge3 (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		for (int x = 0; x<input.getWidth()-2; x++) {
+			for (int y = 0; y<input.getHeight()-2; y++) {
+				// Edge processing
+				Color color = new Color((int)distBox(new Color(input.getRGB(x,y)),new Color(input.getRGB(x+1,y)))/4, 
+					(int)distBox(new Color(input.getRGB(x,y)),new Color(input.getRGB(x,y+1)))/4,
+					(int)distBox(new Color(input.getRGB(x,y)),new Color(input.getRGB(x+1,y+1)))/4);				
+				output.setRGB(x,y+1,color.getRGB());
+			}
+		}
+		return output;
+	}
+	
+	public static BufferedImage meanFilter (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		img = new ImageArray(input);
+		for (int x = 0; x<input.getWidth()-3; x++) {
+			for (int y = 0; y<input.getHeight()-3; y++) {
+				int edge = new Color((img.array[x][y][1] + img.array[x+1][y][1] + img.array[x+2][y][1] +
+					img.array[x][y+1][1] + 0*img.array[x+1][y+1][1] + img.array[x+2][y+1][1] +
+					img.array[x][y+2][1] + img.array[x+1][y+2][1] + img.array[x+ 2][y+2][1])/9,
+					(img.array[x][y][2] + img.array[x+1][y][2] + img.array[x+2][y][2] +
+					img.array[x][y+1][2] + 0*img.array[x+1][y+1][2] + img.array[x+2][y+1][2] +
+					img.array[x][y+2][2] + img.array[x+1][y+2][2] + img.array[x+ 2][y+2][2])/9,
+					(img.array[x][y][3] + img.array[x+1][y][3] + img.array[x+2][y][3] +
+					img.array[x][y+1][3] + 0*img.array[x+1][y+1][3] + img.array[x+2][y+1][3] +
+					img.array[x][y+2][3] + img.array[x+1][y+2][3] + img.array[x+ 2][y+2][3])/9).getRGB();
+				output.setRGB(x+1, y+1, edge);
+			}
+		}
+		return output;
+	}
+	
+	public static BufferedImage noiseFilter (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		img = new ImageArray(input);
+		for (int x = 0; x<input.getWidth()-3; x++) {
+			for (int y = 0; y<input.getHeight()-3; y++) {
+				int edge = 0;
+				for(int r = 0; r<3; r++) {
+					
+				}
+				if(input.getRGB(x, y) < Color.white.getRGB()/25)
+					output.setRGB(x+1, y+1, edge);
+				else
+					output.setRGB(x+1, y+1, input.getRGB(x, y));
+			}
+		}
+		return output;
+	}
+	
+	public static BufferedImage pathFinder (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		maxVal = 0.1;
+		for (int x = 0; x<input.getWidth()-1; x++) {
+			for (int y = 0; y<input.getHeight()-1; y++) {
+				int edge = (int)((distBox(new Color(input.getRGB(x,y)), new Color(input.getRGB(x+1, y))) +
+						distBox(new Color(input.getRGB(x,y)), new Color(input.getRGB(x, y+1))) +
+						distBox(new Color(input.getRGB(x,y)), new Color(input.getRGB(x+1, y+1))))/3);
+				edge = new Color(edge,edge,edge).getRGB();
+				if(new Color(edge).getRed() < 10)
+					edge = 0;
+				maxVal = (edge > maxVal) ? edge : maxVal;
+				output.setRGB(x, y, edge);
+			}
+		}
+		return output;
+	}
+	
+	public static Mesh oMesh (BufferedImage input, int threshold) {
+		//Mark each point by region : ideal constant density output map with matter points representing each region
+		Mesh output = new Mesh();
+
+		maxVal = 0.1;
+		int DONE = 0xFFFFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+		int pointIndex = 0;
+		BufferedImage in = new BufferedImage(input.getWidth()+2, input.getHeight()+2, input.getType());
+		for(int x = 0; x < in.getWidth(); x++) {
+			for(int y = 0; y < in.getHeight(); y++) {
+				in.setRGB(x, y, DONE);
+			}
+		}
+		for(int x = 0; x < input.getWidth(); x++) {
+			for(int y = 0; y < input.getHeight(); y++) {
+				in.setRGB(x+1, y+1, input.getRGB(x,y));
+			}
+		}
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(input.getRGB(x, y) != DONE) {
+				output.startFace();
+				int[] rdir = {0,-1};
+				int[] bdir = {1,0};
+				LinkedList points = new LinkedList();
+				int a = x, b = y;
+				int colorNum = 0;
+				int turnct = 0;
+					while(turnct < 5) {
+						if(Vectorizer.debug)
+							System.out.println("" + a + " , " + b);
+						if(rdir[0] == rdir[1] || bdir[0] == bdir[1]) throw new IllegalStateException();
+						//if(a < height && a >= 0 && b < width && b >= 0 && img.getRGB(a+bdir[0], b+bdir[1]) != DONE)
+						if(input.getRGB(a, b) != DONE)
+							colorNum = in.getRGB(a+1,b+1);
+						else {
+							if(Vectorizer.debug)
+								System.out.println("Turning CCW to avoid array overflow");
+							int rdtmp = rdir[0];
+							rdir[0] = -rdir[1];
+							rdir[1] = -rdtmp;
+							int bdtmp = bdir[0];
+							bdir[0] = -bdir[1];
+							bdir[1] = -bdtmp;
+							System.out.println("Broken");
+							turnct++;
+							//continue;
+							//break;
+						}
+							
+						int[][] leftForward = {{a+rdir[0], b+rdir[1]},{a+bdir[0], b+bdir[1]}};
+						Color color = new Color(colorNum);
+						int red = color.getRed(), green = color.getGreen(), blue = color.getBlue();
+						double[] colorArray = {red, green, blue};
+						int right, bottom, corner;
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							right = in.getRGB(leftForward[0][0]+1, leftForward[0][1]+1);
+						else
+							right = DONE;
+						double[] ra = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+						if(right != DONE) {
+							Color rcol = new Color(right);
+							double[] rd = {rcol.getRed(), rcol.getGreen(), rcol.getBlue()};
+							ra = rd;
+						}
+						double rdist = distance(colorArray, ra);
+						
+						// Move right if path is clear
+						if(rdist < threshold && input.getRGB(leftForward[0][0], leftForward[0][1]) != DONE) { // ? 
+							if(Vectorizer.debug)
+								System.out.println("Moving right " + leftForward[0][0] + ", " + leftForward[0][1] + " : " + rdir[0] + " , " + rdir[1] + " | rdist: " + rdist);
+							a = leftForward[0][0];
+							b = leftForward[0][1];
+						}
+						else {
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								bottom = in.getRGB(leftForward[1][0]+1, leftForward[1][1]+1);
+							else
+								bottom = DONE;
+							int[] rc = {a+rdir[0]+bdir[0], b+rdir[1]+bdir[1]}; 
+							if(rc[1] < height && rc[1] >= 0 && rc[0] < width && rc[0] >= 0)
+								corner = in.getRGB(rc[0]+1, rc[1]+1);
+							else
+								corner = DONE;
+							double[] ba = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+							double[] ca = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+							if(bottom != DONE) {
+								Color bcol = new Color(bottom);
+								double[] bd = {bcol.getRed(), bcol.getGreen(), bcol.getBlue()};
+								ba = bd;		
+							}
+							if(corner != DONE) {
+								Color ccol = new Color(bottom);
+								double[] cd = {ccol.getRed(), ccol.getGreen(), ccol.getBlue()};
+								ca = cd;		
+							}
+							double bdist = distance(colorArray, ba);
+							double cdist = distance(colorArray, ca);
+							
+							//Right point is valid high contrast edge
+							
+							double[] pt = {a+rdir[0]/2,-(b+rdir[1]/2),0};
+							if(!output.addToFace(pt)) break;
+							try {
+							input.setRGB(a+rdir[0], b+rdir[1], DONE);
+							}
+							catch(ArrayIndexOutOfBoundsException e) {}
+							
+							if(Vectorizer.debug)
+								System.out.println("Added point right");
+							if(right != DONE)
+								input.setRGB(leftForward[0][0], leftForward[0][1], DONE);
+							// .X    |   <
+							// X   <-|    v
+							// Cornered; turn CCW
+							if(bdist > threshold) {
+								if(Vectorizer.debug)
+									System.out.println("Turning CCW: " + rdir[0] + " , " + rdir[1] + " | bdist: " + bdist);
+						
+								//Bottom point is valid high contrast edge
+								double[] ptb = {a+bdir[0]/2,-(b+bdir[1]/2),0};
+								if(!output.addToFace(ptb)) break; 
+								try {
+								input.setRGB(a+bdir[0], b+bdir[1], DONE);
+								}
+								catch(ArrayIndexOutOfBoundsException e) {}
+								if(Vectorizer.debug)
+									System.out.println("Added point below");
+								
+								// - is ccw, + cw
+								int rdtmp = rdir[0];
+								rdir[0] = -rdir[1];
+								rdir[1] = -rdtmp;
+								int bdtmp = bdir[0];
+								bdir[0] = -bdir[1];
+								bdir[1] = -bdtmp;
+								
+								
+								if(bottom != DONE)
+									input.setRGB(leftForward[1][0], leftForward[1][1], DONE);
+	
+							}
+							// Concave edge; turn CW
+							else if(cdist > threshold) {
+								if(Vectorizer.debug)
+									System.out.println("Turning CW, " + rdir[0] + " , " + rdir[1]);
+								//a = rc[0];
+								//b = rc[1];
+								int rdtmp = rdir[0];
+								rdir[0] = rdir[1];
+								rdir[1] = rdtmp;
+								int bdtmp = bdir[0];
+								bdir[0] = bdir[1];
+								bdir[1] = bdtmp;
+							}
+							// Continuous right edge; drop down
+							else if (input.getRGB(a+bdir[0], b+bdir[1]) != DONE){
+								if(Vectorizer.debug)
+									System.out.println("Moving down " + bdir[0] + ", " + bdir[1]);
+								a += bdir[0];
+								b += bdir[1];
+							}
+							else {
+								if(Vectorizer.debug)System.out.println("Breaking");
+								break;
+							}
+						}
+						input.setRGB(a, b, DONE);
+						if(a == x && b == y) break;
+					}
+					int size = points.size();
+					int[] indices = new int[size];
+					for(int i = 0; i < size; i++) {
+						indices[i] = pointIndex+i;
+					}
+					if(Vectorizer.debug)
+						System.out.println("Closed face");
+					//output.addFace(indices);
+					output.endFace();
+					pointIndex += points.size();
+				}
+				input.setRGB(x, y, DONE);
+			}
+		}
+		//img = input;
+		return output;
+	}
+
+	public static Mesh bMesh (BufferedImage input, int threshold) {
+		Mesh mesh = new Mesh(threshold);
+		maxVal = 0.1;
+		int DONE = 0xFFFFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+
+		//Copy image with a high-contrast border
+		BufferedImage in = new BufferedImage(input.getWidth()+2, input.getHeight()+2, input.getType());
+		for(int x = 0; x < width+2; x++) {
+			in.setRGB(x, 0, DONE);
+			in.setRGB(x, height-1, DONE);
+		}
+		for(int y = 0; y < height+2; y++) {
+			in.setRGB(0, y, DONE);
+			in.setRGB(width-1, y, DONE);
+		}
+		for(int x = 0; x < width; x++)
+			for(int y = 0; y < height; y++)
+				in.setRGB(x+1, y+1, input.getRGB(x,y));
+
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(input.getRGB(x, y) != DONE) {
+				int a = x, b = y;
+				int[] left = {0,-1}; //^
+				int[] forward = {1,0}; //>
+				
+				//Inside loop for edge detection, outside for regionalization
+				int colorNum = input.getRGB(a, b);
+				Color color = new Color(colorNum);
+				int red = color.getRed(), green = color.getGreen(), blue = color.getBlue();
+				double[] colorArray = {red, green, blue};
+				//-----------------------------------------------------------
+				
+				//double lastContrast = 0;
+				
+				mesh.startFace();
+				int onStartingSpot = 0;
+				int la = a, lb = b; 
+					while(onStartingSpot < 5) {
+						System.out.println(input.getRGB(a, b) + " " + a + " " + b);
+						//If eye remains on same spot or returns, terminate // Return is obsolete!
+						if(la == a && lb == b)
+							onStartingSpot++;
+						else
+							onStartingSpot = 0;
+						la = a;
+						lb = b;
+						
+						//if(Vectorizer.debug)
+							System.out.println("" + a + " , " + b + " Repeat: " + onStartingSpot); 
+						
+						int[][] leftForward = {{a+left[0], b+left[1]},{a+forward[0], b+forward[1]}};
+						int leftColor, forwardColor;
+						
+						//Get color contrast on left side
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							leftColor = input.getRGB(leftForward[0][0], leftForward[0][1]);
+						else
+							leftColor = DONE;
+						double leftContrast = Double.MAX_VALUE;
+						if(leftColor != DONE) {
+							double[] leftArray;
+							Color lcol = new Color(leftColor);
+							double[] tempArray = {lcol.getRed(), lcol.getGreen(), lcol.getBlue()};
+							leftArray = tempArray;
+							leftContrast = distance(colorArray, leftArray);
+						}
+						//if(leftContrast != lastContrast) {
+						//	lastContrast = leftContrast;
+							//System.out.println("Contrast: " + lastContrast);
+						//}
+						
+						//--------------------------------
+						
+						//1st case: left is low contrast and is not formerly occupied: rotate CCW and move to new forward
+						if(leftContrast < threshold) {
+							if(Vectorizer.debug)
+								System.out.println("Rotating CCW: " + leftForward[0][0] + ", " + leftForward[0][1] + " : " + left[0] + " , " + left[1] + " | Contrast: " + leftContrast);
+							//Rotate CCW
+							forward[0] = left[0];
+							forward[1] = left[1];
+							if(left[1] == 0) {
+								left[0] = -forward[1];
+								left[1] = -forward[0];
+							}
+							else {
+								left[0] = forward[1];
+								left[1] = forward[0];
+							}
+								
+							
+							a += forward[0];
+							b += forward[1];
+						}
+						else {
+							if(leftColor != DONE) {
+								input.setRGB(leftForward[0][0], leftForward[0][1], DONE);
+								//Left point is valid high contrast edge
+								if(Vectorizer.debug)
+									System.out.println("Added point left");
+								double[] pt = {a+left[0]/2,-(b+left[1]/2),0};
+								if(!mesh.addToFace(pt)) break;
+								try {
+								input.setRGB(a+left[0], b+left[1], DONE);
+								}
+								catch(ArrayIndexOutOfBoundsException e) {System.err.println("OUT OF BOUNDS: " + (a+left[0]) + " , " + (b+left[1]));}
+								//--------------------------------------
+							}
+							
+							//Get forward color contrast
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								forwardColor = input.getRGB(leftForward[1][0], leftForward[1][1]);
+							else
+								forwardColor = DONE;
+							double forwardContrast = Double.MAX_VALUE;
+							if(forwardColor != DONE) {
+								double[] forwardArray;
+								Color fcol = new Color(forwardColor);
+								double[] tempArray = {fcol.getRed(), fcol.getGreen(), fcol.getBlue()};
+								forwardArray = tempArray;
+								forwardContrast = distance(colorArray, forwardArray);
+							}
+							//--------------------------
+								
+							//Forward is clear; move forward
+							if(forwardContrast < threshold) {
+								if(Vectorizer.debug)
+									System.out.println("Moving forward: " + forward[0] + " , " + forward[1] + " | Contrast: " + forwardContrast);
+								a += forward[0];
+								b += forward[1];
+							}
+							//------------------------------
+							
+							//Forward is blocked: Turn CW
+							else {
+								if(Vectorizer.debug)
+									System.out.println("Turning CW: " + left[0] + " , " + left[1] + " | Contrast: " + forwardContrast);
+								left[0] = forward[0];
+								left[1] = forward[1];
+								if(left[0] == 0) {
+									forward[0] = -left[1];
+									forward[1] = -left[0];
+								}
+								else {
+									forward[0] = left[1];
+									forward[1] = left[0];
+								}
+							}
+							}
+						//if(a != x || b != y)
+							input.setRGB(a, b, DONE);
+						}
+						if(Vectorizer.debug)
+							System.out.println("Ending face");
+						mesh.endFace();
+					}
+					input.setRGB(x, y, DONE);
+				}
+			}
+			img = new ImageArray(input);
+			return mesh;
+		}
+
+	public static Mesh toField (BufferedImage input, int threshold) {
+		ImageArray image = new ImageArray(input);
+		int[][][] in = image.array;
+		Mesh mesh = new Mesh(15);
+		maxVal = 0.1;
+		int DONE = 0x0FFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(in[x][y][0] != DONE) {
+				int a = x, b = y;
+				int[] left = {0,-1};
+				int[] forward = {1,0};
+				
+				mesh.startFace();
+				int onStartingSpot = 0;
+				int la = a, lb = b; 
+					while(onStartingSpot < 5) {
+						System.out.println(in[a][b][0] + ": " + a + " , " + b + " | Repeat: " + onStartingSpot);
+						//If eye remains on same spot 5x, terminate
+						if(la == a && lb == b)
+							onStartingSpot++;
+						else
+							onStartingSpot = 0;
+						la = a;
+						lb = b;
+						
+						int[][] leftForward = {{a+left[0], b+left[1]},{a+forward[0], b+forward[1]}};
+						int leftColor, forwardColor;
+						
+						//Get color contrast on left side
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							leftColor = in[leftForward[0][0]][leftForward[0][1]][0];
+						else
+							leftColor = DONE;
+						double leftContrast = Double.MAX_VALUE;
+						if(leftColor != DONE) {
+							double[] leftArray;
+							Color lcol = new Color(leftColor);
+							double[] tempArray = {lcol.getRed(), lcol.getGreen(), lcol.getBlue()};
+							leftArray = tempArray;
+							leftContrast = distance(in[a][b], in[leftForward[0][0]][leftForward[0][1]]);
+						}
+						//--------------------------------
+						
+						//1st case: left is low contrast and is not formerly occupied: rotate CCW and move to new forward
+						if(leftContrast < threshold) {
+							if(Vectorizer.debug)
+								System.out.println("Rotating CCW: " + leftForward[0][0] + ", " + leftForward[0][1] + " : " + left[0] + " , " + left[1] + " | Contrast: " + leftContrast);
+							//Rotate CCW
+							forward[0] = left[0];
+							forward[1] = left[1];
+							if(left[1] == 0) {
+								left[0] = -forward[1];
+								left[1] = -forward[0];
+							}
+							else {
+								left[0] = forward[1];
+								left[1] = forward[0];
+							}
+								
+							
+							a += forward[0];
+							b += forward[1];
+						}
+						else {
+							if(leftColor != DONE && in[a+left[0]][b+left[1]][0] != DONE) {
+								//in[leftForward[0][0]][leftForward[0][1]][0] =  DONE;
+								
+								//Left point is valid high contrast edge
+								if(Vectorizer.debug)
+									System.out.println("Added point left");
+								double[] pt = {a+left[0]/2,-(b+left[1]/2),0};
+								if(!mesh.addToFace(pt)) break;
+								try {
+								in[a+left[0]][b+left[1]][0] = DONE;
+								}
+								catch(ArrayIndexOutOfBoundsException e) {System.err.println("OUT OF BOUNDS: " + (a+left[0]) + " , " + (b+left[1]));}
+								//--------------------------------------
+							}
+							
+							//Get forward color contrast
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								forwardColor = in[leftForward[1][0]][leftForward[1][1]][0];
+							else
+								forwardColor = DONE;
+							double forwardContrast = Double.MAX_VALUE;
+							if(forwardColor != DONE) {
+								double[] forwardArray;
+								Color fcol = new Color(forwardColor);
+								double[] tempArray = {fcol.getRed(), fcol.getGreen(), fcol.getBlue()};
+								forwardArray = tempArray;
+								forwardContrast = distance(in[a][b], in[leftForward[1][0]][leftForward[1][1]]);
+							}
+							//--------------------------
+								
+							//Forward is clear; move forward
+							if(forwardContrast < threshold) {
+								if(Vectorizer.debug)
+									System.out.println("Moving forward: " + forward[0] + " , " + forward[1] + " | Contrast: " + forwardContrast);
+								a += forward[0];
+								b += forward[1];
+							}
+							//------------------------------
+							
+							//Forward is blocked: Turn CW
+							else {
+								if(Vectorizer.debug)
+									System.out.println("Turning CW: " + left[0] + " , " + left[1] + " | Contrast: " + forwardContrast);
+								left[0] = forward[0];
+								left[1] = forward[1];
+								if(left[0] == 0) {
+									forward[0] = -left[1];
+									forward[1] = -left[0];
+								}
+								else {
+									forward[0] = left[1];
+									forward[1] = left[0];
+								}
+							}
+							}
+						//if(a != x || b != y)
+							//input.setRGB(a, b, DONE);
+						in[a][b][0] = DONE;
+						}
+						if(Vectorizer.debug)
+							System.out.println("Ending face");
+						mesh.endFace();
+					}
+					//input.setRGB(x, y, DONE);
+				in[x][y][0] = DONE;
+				}
+			}
+			img = new ImageArray(input);
+			return mesh;
+		}
+	
+	public static Mesh toMeshWorks (BufferedImage input, int threshold) {
+		ImageArray image = new ImageArray(input);
+		int[][][] in = image.array;
+		Mesh mesh = new Mesh(30);
+		int DONE = 0x0FFFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(in[x][y][0] != DONE) {
+					int a = x, b = y;
+					int[] left = {0,-1};
+					int[] forward = {1,0};
+					int onStartingSpot = 0;
+					int la = a, lb = b;
+					mesh.startFace();
+					
+					while(onStartingSpot < 5) {
+						if(Vectorizer.debug)
+							System.out.println(in[a][b][0] + ": " + a + " , " + b + " | Repeat: " + onStartingSpot);
+						//If eye remains on same spot 5x, terminate
+						if(a == x && b == y) 
+							if(la == a && lb == b)
+								onStartingSpot++;
+							else
+								onStartingSpot+=5;
+						la = a;
+						lb = b;
+						
+						int[][] leftForward = {{a+left[0], b+left[1]},{a+forward[0], b+forward[1]}};
+						//Get color contrast on left side
+						double leftContrast = DONE;
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							leftContrast = ImageArray.colorDistance(in[a][b], in[leftForward[0][0]][leftForward[0][1]]);
+						
+						//1st case: left is low contrast and is not formerly occupied: rotate CCW and move to new forward
+						if(leftContrast < threshold) {
+							if(Vectorizer.debug)
+								System.out.println("Rotating CCW: " + leftForward[0][0] + ", " + leftForward[0][1] + " : " + left[0] + " , " + left[1] + " | Contrast: " + leftContrast);
+							//Rotate CCW
+							forward[0] = left[0];
+							forward[1] = left[1];
+							if(left[1] == 0) {
+								left[0] = -forward[1];
+								left[1] = -forward[0];
+							}
+							else {
+								left[0] = forward[1];
+								left[1] = forward[0];
+							}
+							a += forward[0];
+							b += forward[1];
+						}
+						else {
+							//Left point is valid high contrast edge
+							try {
+							in[leftForward[0][0]][leftForward[0][1]][0] =  DONE;
+							}
+							catch(Exception e) {}
+							if(Vectorizer.debug)
+								System.out.println("Added point left");
+							double[] pt = {a+left[0]/2,-(b+left[1]/2),0};
+							if(!mesh.addToFace(pt)) break;
+							
+							//Get forward color contrast
+							double forwardContrast = DONE;
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								forwardContrast = ImageArray.colorDistance(in[a][b], in[leftForward[1][0]][leftForward[1][1]]);
+								
+							//Forward is clear; move forward
+							if(forwardContrast < threshold) {
+							if(Vectorizer.debug)
+								System.out.println("Moving forward: " + forward[0] + " , " + forward[1] + " | Contrast: " + forwardContrast);
+							a += forward[0];
+							b += forward[1];
+						}
+						//------------------------------
+						
+						//Forward is blocked: Turn CW
+						else {
+							if(Vectorizer.debug)
+								System.out.println("Turning CW: " + left[0] + " , " + left[1] + " | Contrast: " + forwardContrast);
+							left[0] = forward[0];
+							left[1] = forward[1];
+							if(left[0] == 0) {
+								forward[0] = -left[1];
+								forward[1] = -left[0];
+							}
+							else {
+								forward[0] = left[1];
+								forward[1] = left[0];
+							}
+						}
+						}
+					in[a][b][0] = DONE;
+					}
+					if(Vectorizer.debug)
+						System.out.println("Ending face");
+					mesh.endFace();
+				}
+				in[x][y][0] = DONE;
+			}
+		}
+		img = new ImageArray(input);
+		return mesh;
+	}
+
+	
+	public static Mesh toMesh (BufferedImage input, int threshold) {
+		//Automatic non-maximal suppression
+		ImageArray image = new ImageArray(input);
+		int[][][] in = image.array;
+		Mesh mesh = new Mesh(10);
+		int DONE = 0x0FFFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(in[x][y][0] != DONE) {
+					int a = x, b = y;
+					int[] left = {0,-1};
+					int[] forward = {1,0};
+					int onStartingSpot = 0;
+					int la = a, lb = b;
+					mesh.startFace();
+					
+					while(onStartingSpot < 5) {
+						//If eye remains on same spot 5x, terminate
+						if(a == x && b == y) 
+							if(la == a && lb == b)
+								onStartingSpot++;
+							else
+								onStartingSpot+=5;
+						la = a;
+						lb = b;
+						
+						int[][] leftForward = {{a+left[0], b+left[1]},{a+forward[0], b+forward[1]}};
+						//Get color contrast on left side
+						double leftContrast = DONE;
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							leftContrast = ImageArray.colorDistance(in[a][b], in[leftForward[0][0]][leftForward[0][1]]);
+						
+						//1st case: left is low contrast and is not formerly occupied: rotate CCW and move to new forward
+						if(leftContrast < threshold) {
+							//Rotate CCW
+							forward[0] = left[0];
+							forward[1] = left[1];
+							if(left[1] == 0) {
+								left[0] = -forward[1];
+								left[1] = -forward[0];
+							}
+							else {
+								left[0] = forward[1];
+								left[1] = forward[0];
+							}
+							a += forward[0];
+							b += forward[1];
+						}
+						else {
+							//Left point is valid high contrast edge
+							try {
+							in[leftForward[0][0]][leftForward[0][1]][0] =  DONE;
+							}
+							catch(Exception e) {}
+							double[] pt = {a+left[0]/2,-(b+left[1]/2),0};
+							if(!mesh.addToFace(pt)) break;
+							
+							//Get forward color contrast
+							double forwardContrast = DONE;
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								forwardContrast = ImageArray.colorDistance(in[a][b], in[leftForward[1][0]][leftForward[1][1]]);
+								
+							//Forward is clear; move forward
+							if(forwardContrast < threshold) {
+							a += forward[0];
+							b += forward[1];
+						}
+						//------------------------------
+						
+						//Forward is blocked: Turn CW
+						else {
+							left[0] = forward[0];
+							left[1] = forward[1];
+							if(left[0] == 0) {
+								forward[0] = -left[1];
+								forward[1] = -left[0];
+							}
+							else {
+								forward[0] = left[1];
+								forward[1] = left[0];
+							}
+						}
+						}
+					in[a][b][0] = DONE;
+					}
+					mesh.endFace();
+				}
+				in[x][y][0] = DONE;
+			}
+		}
+		img = new ImageArray(input);
+		return mesh;
+	}
+
+	
+	public static double distance(double[] l1, double[] l2) {
+		int len = l1.length > l2.length ? l2.length : l1.length;
+		double dist = 0;
+		for (int i = 0; i < len; i++) {
+			dist += Math.pow(l1[i] - l2[i],2);
+		}
+		dist = Math.sqrt(dist);
+		return dist;
+	}
+
+	public static void traceVectors (BufferedImage input) {
+		img = new ImageArray(input);
+		try {
+			JFileChooser chooser = new JFileChooser();
+			int save = chooser.showSaveDialog(null);
+			if (save == JFileChooser.APPROVE_OPTION) {
+				PrintWriter output = new PrintWriter(chooser.getSelectedFile());
+				int points = 0, edges = 0;
+				//int[][] point = new int[img.width*img.height][2], edge = new int[img.width*img.height][2];
+				PointList point = new PointList();
+				EdgeList edge = new EdgeList();
+				for (int x = 0; x<input.getWidth()-1; x++) {
+					for (int y = 0; y<input.getHeight()-1; y++) {
+						if(new Color(input.getRGB(x,y)).getRed() > 10) {
+							boolean first = true;
+							points++;
+							point.add(new Point(x, -y));
+							//point[points-1][0] = x;
+							//point[points-1][1] = -y;
+							int a = x, b = y;
+							Point start = point.current, end = start;
+							double slope = 0;
+							while(true) {
+								int[] close=closest(a,b,1);
+								if(!(close[0] == 0 && close[1] == 0) && img.array[a+close[0]][b+close[1]][1] > -1 && new Color(input.getRGB(a+close[0],b+close[1])).getRed() > 7) {
+									a += close[0];
+									b += close[1];
+									img.array[a][b][1] = -1;
+
+									if(first) {
+										point.add(new Point(a,-b));
+										points++;
+									}
+									if(!first) { // && Math.abs(point[points-1][0] - point[points-2][0]) < 4 && Math.abs(point[points-1][1] - point[points-2][1])<4){
+										/*
+										// Traverse current line and check for deviations
+										point.current = start;
+										double avgSlope = 0;
+										int pointsInLine = 1;
+										while(point.current != null && point.current.next != null) {
+											avgSlope += Point.slope(point.current, point.current.next);
+											if(point.current.next.next == null)
+												end = point.current;
+											point.current = point.current.next;
+											pointsInLine++;
+										} */
+										//if(Math.abs(Point.slope(point.current, end) - avgSlope/(pointsInLine-1)) < .5) {
+											//slope = (Point.slope(point.current, end) + avgSlope)/pointsInLine;
+											points++;
+											point.add(new Point(a,-b));
+											edge.add(new Edge(points-1, points -2));
+											edges++;
+										//}
+									}
+									else
+										first = false;
+								}
+								else
+									break;
+							}
+							img.array[x][y][1] = -1;
+						}
+						else {
+
+						}
+					}
+				}
+				
+				double theta = 0;
+
+				
+				output.println("object { \"Vector\"" +
+						"\n      material { \"-- default --\" }" +
+						"\n   mesh {\n       name { \"Vector\" }" +
+						"\n      material { \" -- default --\" }\n    materiallist {\n    materialname { \" -- default --\" }\n    }\n");
+					    
+				if(points > 0) {
+					output.println("      points {");
+					//for(int i = 0; i < points; i++) {
+					point.current = point.start;
+					while(point.current != null) {
+						output.println("         " + point.current);
+						point.current = point.current.next;
+					}
+					//}
+
+					output.println("      }");
+				}
+				if(edges >0) {
+					output.println("      edges {");
+					//for(int i = 0; i < edges; i++) {
+					edge.current = edge.start;
+					while(edge.current != null) {
+						output.println("         " + edge.current);
+						edge.current = edge.current.next;
+					}
+					//}
+					output.println("      }");	
+				}
+				output.println("   }\n}");
+				output.close();
+			}
+		}
+		catch (IOException exception) {}
+		}
+	
+	public static int[] closest(int x, int y, int radius) {
+			double close = 999999999;
+			int[] dir = new int[3];
+			dir[0] = 0; dir[1] = 0;
+			// a/b precedence determines direction of smear flow!
+			for(int b = -radius; b <= radius; b++) {
+				for(int a = -radius; a <= radius; a++) {
+					if(!(a==0 && b==0) && a+x >= 0 && b+y >= 0 && b+y < img.height && a+x < img.width) {
+						if(img.array[x+a][y+b][1]>-1 && distance(new Color(img.array[x][y][0]), new Color(img.array[x+a][y+b][0])) < close) {
+							dir[0] = a;
+							dir[1] = b;
+							close = distance(new Color(img.array[x][y][0]), new Color(img.array[x+a][y+b][0]));
+						}
+					}
+				}
+			}
+			dir[2] = (int)close;
+			return dir;
+		}
+		// Idea: use superclass for image modification template (i.e. bounds, operation, etc.
+	
+		public static BufferedImage regionalize2(BufferedImage input, int threshold) {
+			BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+			//ImageArray edge = new ImageArray(pathFinder(input));
+			img = new ImageArray(input);
+			for (int x = 0; x<input.getWidth(); x++) {
+				for (int y = 0; y<input.getHeight(); y++) {
+					
+					// Pass 1: calculate color average & flag pixels; calc bounding box
+					if(img.array[x][y][1] > -1) {
+						int[] color = new int[3];
+						for(int i=0; i<3; i++)
+							color[i] = img.array[x][y][i+1];
+						Color original = new Color(img.array[x][y][0]);
+
+						int[][] bbox = new int[2][2];
+						for(int i=0; i<2; i++) {
+							bbox[i][0] = x;
+							bbox[i][1] = y;
+						}
+						
+						img.array[x][y][1] = -1;
+						int points = 1;
+						int a = x, b = y;	
+						int[] close = new int[3];
+						close[0]=1;close[1]=1;close[2]=255;
+						while(!(close[0] == 0 && close[1] == 0)) {
+							close = closest(a,b,1);
+							if(close[2] < threshold && distBox(original, new Color(img.array[a+close[0]][b+close[1]][0])) < threshold) {// && edge.array[a][b][1] < threshold) {
+								a += close[0];
+								b += close[1];
+								for(int i=0; i<3; i++)
+									color[i] += img.array[a][b][i+1];
+								img.array[a][b][1] = -2;
+								points++;
+								
+								if(a<bbox[0][0])
+									bbox[0][0]=a;
+								else if(a>bbox[1][0])
+									bbox[1][0]=a;
+								if(b<bbox[0][1])
+									bbox[0][1]=b;
+								else if(b>bbox[1][1])
+									bbox[1][1]=b;
+							}
+							else
+								break;
+						}
+						for(int i=0; i<3; i++) {
+							color[i] /= points;
+							if(color[i] < 0 || color[i] >255) {
+								JOptionPane.showMessageDialog(null, ""+i+": "+color[i]);
+							}
+						}
+						
+						int average = new Color(color[0], color[1], color[2]).getRGB();
+						// Pass 2: set all flagged colors to average
+						for(a = bbox[0][0]; a <=bbox[1][0]; a++) {
+							for(b = bbox[0][1]; b < bbox[1][1]; b++) {
+								if(img.array[a][b][1] == -2) {
+									img.array[a][b][0] = average;
+									img.array[a][b][1] = -1;	
+								}
+							}
+						}
+						
+						
+					}
+				}
+			}
+			output = img.toImage(img.array);
+			return output;
+		}
+			
+		public static BufferedImage regionalize (BufferedImage input, int threshold) {
+			BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+			ImageArray edge = new ImageArray(suppress(invert(pathFinder(input))));
+			img = new ImageArray(input);
+			for (int x = 0; x<input.getWidth(); x++) {
+				for (int y = 0; y<input.getHeight(); y++) {
+					if(edge.array[x][y][0] != Color.black.getRGB()) {
+						// Pass 1: calculate color average & flag pixels; calc bounding box
+						if(img.array[x][y][1] > -1) {
+							int[] color = new int[3];
+							for(int i=0; i<3; i++)
+								color[i] = img.array[x][y][i+1]; // Sets color for averaging
+							Color original = new Color(img.array[x][y][0]); // Color of base pixel
+							int[][] bbox = new int[2][2];
+							for(int i=0; i<2; i++) {
+								bbox[i][0] = x;
+								bbox[i][1] = y;
+							}
+							img.array[x][y][1] = -1;
+							int points = 1;
+							int a = x, b = y;
+							int[] close = new int[3]; close[0]=1;close[1]=1;close[2]=255;
+							while(!(close[0] == 0 && close[1] == 0)) {
+								close = closest(a,b,1);
+								if(close[2] < threshold && distBox(original, new Color(img.array[a+close[0]][b+close[1]][0])) < threshold && edge.array[a][b][1] < threshold) {
+									a += close[0];
+									b += close[1];
+									for(int i=0; i<3; i++)
+										color[i] += img.array[a][b][i+1];
+									img.array[a][b][1] = -2;
+									points++;
+									
+									if(a<bbox[0][0])
+										bbox[0][0]=a;
+									else if(a>bbox[1][0])
+										bbox[1][0]=a;
+									if(b<bbox[0][1])
+										bbox[0][1]=b;
+									else if(b>bbox[1][1])
+										bbox[1][1]=b;
+								}
+								else
+									break;
+							}
+							for(int i=0; i<3; i++)
+								color[i] /= points;
+							int average = new Color(color[0], color[1], color[2]).getRGB();
+							
+							// Pass 2: set all flagged colors to average
+							for(a = bbox[0][0]; a <=bbox[1][0]; a++) {
+								for(b = bbox[0][1]; b < bbox[1][1]; b++) {
+									if(img.array[a][b][1] == -2) {
+										img.array[a][b][0] = average;
+										img.array[a][b][1] = -1;	
+									}
+								}
+							}
+							
+							
+						}
+					}
+				}
+			}
+			output = img.toImage(img.array);
+			return output;
+		}
+		
+	// Returns a threshold of the image
+	public static BufferedImage threshold (BufferedImage input, int threshold) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		for (int x = 0; x<input.getWidth()-1; x++) 
+			for (int y = 0; y<input.getHeight()-1; y++) 
+				if(sum(input.getRGB(x,y)) <threshold)
+					output.setRGB(x,y,Color.black.getRGB());
+				else
+					output.setRGB(x,y,Color.white.getRGB());
+		return output;
+	} 
+	
+	public static BufferedImage toGray (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		for (int x = 0; x<input.getWidth(); x++)
+			for (int y = 0; y<input.getHeight(); y++)
+				output.setRGB(x, y, gray(input.getRGB(x,y)));
+		return output;
+	}
+	
+	public static BufferedImage copy (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		for (int x = 0; x<input.getWidth(); x++)
+			for (int y = 0; y<input.getHeight(); y++)
+				output.setRGB(x,y,input.getRGB(x, y));
+		return output;
+	}
+	
+	public static BufferedImage invert (BufferedImage input) {
+		BufferedImage output = new BufferedImage(input.getWidth(), input.getHeight(), input.getType());
+		for (int x = 0; x<input.getWidth(); x++)
+			for (int y = 0; y<input.getHeight(); y++) {
+				Color clr = new Color(input.getRGB(x,y));
+				Color color = new Color(255-clr.getRed(), 255-clr.getGreen(), 255-clr. getBlue());
+				output.setRGB(x,y,color.getRGB());
+			}
+		return output;
+	}
+	
+	// Returns the sum of all of the color components (grayscale * 3)
+	public static int sum (Color color) {
+		return (color.getRed() + color. getGreen() + color.getBlue());
+	}
+	
+	public static int sum (int color) {
+		return sum(new Color(color));
+	}
+	
+	public static int add(int[] list) {
+			int xyz = 0;
+			for(int i = 0; i <list.length; i++)
+				xyz += list[i];
+			return xyz;
+	}
+	
+	// Returns the color as a grayscale
+	public static int gray(Color color) {
+		int average = sum(color)/3;
+		return (new Color(average, average, average).getRGB());
+	}
+
+	public static int gray(int color) {
+		int average = sum(new Color(color))/3;
+		return (new Color(average, average, average)).getRGB();
+	}
+	
+	// Finds the distance between two colors.
+	public static double distance(Color color1, Color color2) {
+		return Math.sqrt((Math.pow(color1.getRed()-color2.getRed(),2) 
+				+ Math.pow(color1.getGreen()- color2.getGreen(),2) + Math.pow(color1.getBlue() - color2.getBlue(),2))/3);
+	}
+	
+	public static double distance(int[] color1, int[] color2) {
+		if(color1.length != color2.length)
+			return -1;
+		double result = 0;
+		for(int i = 0; i < color1.length; i++) {
+			result += (Math.pow(color1[i] - color2[i], 2));
+		}
+		return Math.sqrt(result/3);
+	}
+
+	public static int distBox(Color color1, Color color2) {
+		return (Math.abs(color1.getRed()-color2.getRed()) 
+				+ Math.abs(color1.getGreen()- color2.getGreen()) + Math.abs(color1.getBlue() - color2.getBlue()))/3;
+	}
+	
+	public BufferedImage toImage() {
+		return img.toImage();
+	}
+		// An inner class for handling image array operations
+
+	// Generates a field of unique point-areas or features to allow the image to be compared.
+	
+	//public static Field toField(BufferedImage input) {
+
+	//}
+
+}

@@ -1,0 +1,31 @@
+
+	public static Mesh toMeshTraceGray(BufferedImage input, int threshold) {
+		ImageArray image = new ImageArray(toGray(suppress(edge3(input))));
+		Mesh mesh = new Mesh();
+		int height = input.getHeight(), width = input.getWidth();
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(image.array[x][y][1] > threshold) { // >0 for all significant contrasts!
+					mesh.startFace();
+					double[] pt1 = {x,y,0};
+					mesh.addToFace(pt1);
+					int a = x, b = y;
+					image.array[a][b][1] = 0; // So that this point will not be considered the closest
+					image.setRGB(a,b,0);
+					while(true) {
+						int[] nextPt = highestGray(image, a, b, 3);
+						if(nextPt[0] == 0 && nextPt[1] == 0)
+							break;
+						a += nextPt[0];
+						b += nextPt[1];
+						double[] pt = {a,b,0};
+						mesh.addToFace(pt);
+						image.array[a][b][1] = 0;
+					}
+					mesh.endFace();
+				}
+				image.array[x][y][1] = 0;
+			}
+		}
+		return mesh;
+	}

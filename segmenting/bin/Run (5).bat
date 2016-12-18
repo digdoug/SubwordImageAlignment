@@ -1,0 +1,1 @@
+java -classpath "./jai_imageio-1.1.jar;./" HW1

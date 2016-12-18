@@ -1,0 +1,87 @@
+KERNELS
+Kernels work by multiplying a neighborhood of pixels in an image by set values. The result of a kernel is the sum of each of the set values times each of the pixel values. This process is repeated for each pixel in an image.
+
+MEAN FILTERING
+Mean filtering is used in this project because of its simplicity and effectiveness. The purpose of filtering the image prior to edge detection is to actually decrease sensitivity of the non-maximal suppression. This should lead to straighter, more complete lines.
+The method experimented with here is not actually true mean filtering. Normally, the pixels surrounding the current pixels are each weighted equally with the current pixel. However, it was found that the edges were more complete when the current pixel was weighted equally with the sum of the surrounding pixels.
+
+Mean filter output
+Sample mean image output
+This kernel of values passes over the complete image left to right for each row, top to bottom. The process of multiplying this kernel with the entire image is known as convolution. The region around each pixel is multiplied by a set of nine values in the kernel, and the new image is made of the sum of each product.
+Three lines of video must be stored in microcontroller RAM at a time for this 3x3 pixel filter to be computed.
+
+SOBEL EDGE DETECTION
+In my work last year, I showed how Sobel is the best simple edge detection method in terms of accuracy and susceptibility to noise. Canny has been shown to have good performance as well, but the complexity and lack of speed made it less appealing.
+Similar to the filtering, Sobel operates by convoluting a 3x3 kernel over the image and finding the edge result. Edge detection is often explained as a method which finds areas of high contrast in the image. Basically, it finds areas where the brightness changes, often the edges of simple objects.
+The kernel is relatively simple, except you may note from that there are two kernels involved. One of these finds horizontal edges and the other finds vertical edges. This information can be very useful in finding the angle of edges; however, often one just wants to display the actual edges. The equation for obtaining the edges image is shown below.
+
+The horizontal and vertical kernel results can be thought of as sides in a triangle, at a 90 degree angle with each other. Trigonometry can be applied to find the angle of the edge, and as shown above, the Pythagorean Theorem can find the final result - the hypotenuse.
+
+While this is the most preferable method, it is quite slow and complicated to take the square root on a microcontroller. The estimation shown was tested on the microcontroller as well as the square root method. Again, 3 lines of video must be stored at a time for this 3x3 kernel to find and output the edges. The result of this algorithm on a sample image is shown below.
+
+NON-MAXIMAL SUPPRESSION
+The only problem with the edges image is the width of the edges. For vector lines to be computed to represent the input image, most methods require a single-pixel wide line. Thinning can be used to keep only the center of each line. This was experimented with, but it was found that this was extremely slow and often gave poor results. Non-maximal suppression was the obvious alternative.
+Sometimes non-maximal suppression is over-complicated by finding the precise edge angle to determine if this edge is the local maxima that can represent the line. In fact, all you need to find is whether the edge direction found a more horizontal or vertical, if the current pixel a maxima with it's horizontal neighbors, and if it's a maxima with it's vertical neighbors. This method of non-maximal suppression was discussed in a report on image compression by Desai et al.
+When the 3 factors mentioned above have been determined, then the suppression can be computed. It is an edge (not suppressed) if any of the equations are true. Otherwise, the pixel is suppressed to zero.
+
+This is programmed for the microcontroller by storing 4 lines of video, creating two arrays for horizontal/vertical edge, an array for horizontal maximum, and an array for vertical maximum.
+
+SIMPLE THRESHOLDING
+The thresholding used here is very basic, but it uses up really no extra time, and it works for a lot of simple objects and scenes. A threshold is set which each pixel is compared to. If the pixel is greater than or equal to this threshold, it is outputted as a 1. Otherwise it is outputted as a 0. The image above uses threshold 64/255.
+
+BINARY FILTERS
+NOISE FILTER
+This noise filter is very simple, yet effective for removing most tiny areas of noise which would slow the vectorization down significantly. The method described here would pass a digital kernel - similar in some ways to the analog mean and Sobel kernels - over every pixel and the surrounding neighborhood to eliminate noise.
+The two kernels for this are shown above. The first is good for detecting larger
+areas of noise, and the second is better for detecting single pixels of noise.
+For the kernel on the left, the 16 outside cells are tested to check if they all equal 0. If that is true, and the middle pixel is equal to 1, then the center 3x3 pixels are set to 0. The kernel on the right does almost the same thing. It checks to see if the 8 pixels surrounding the center are all 0, and the center
+is 1. If that is true, the center is set to 0.
+After this filter, a real-world result would be quite neat and tidy. This allows the vectorization to work better, and not slow down when it finds noise.
+These 2x2 blocks of pixels are very bad
+Prevent these blocks of 4 pixels at all cost, while connecting all pixels up, down, left, and right
+
+EIGHT TO FOUR CONNECTIVITY FILTER
+This filter has gone through a number of revisions. Its purpose is to find all pixels which are connected diagonally to one another, and add pixels to make them connected up, down, left, and right. This started out as simply a filter which would find two diagonally connected pixels, and add another pixel between them to connect them in the 4 directions. However, this sometimes
+created groups of 4 pixels which would certainly slow down or even stop the
+vectorization completely.
+After this, I developed another group of filters - 22 in number - that would find areas where this would likely happen (i.e. a straight line with a bite out of it), and place the new pixels in such a way that these groups of 4 pixels would not
+be created. The problem with this idea was that passing 22 filters over an image was slow and cumbersome, and would not work well in a microcontroller.
+Thinking about this some more, I realized that if I went back to the original simple filters, and checked to make sure a cluster of 4 pixels would not be made, it would be much easier.
+
+BROKEN LINES FILTER
+This filter is one of the more complex ones I designed, because it can fix lines that are quite broken. How it works is by finding a pixel which is set (part of a line), and one-connected (part of a broken line). It finds another one-connected
+pixel which is set in the vicinity of the current pixel, and connects the two with a
+line.
+If a pixel is set and 1-connected, it searches 11x11 pixels around the current pixel to find similar pixel. If this can be found, the line jumps to the new pixel.
+
+VECTORIZATION
+Vectorization is used to look at the input image, and generate a series of vector lines which more-or-less represent the image. The basis of the method used here has been described by Dr. J. R. Parker, however, many changes were made to increase accuracy of the output, and allow an input image from the real world - not a perfect, computer-generated line image.
+The method he described would first find a starting point on the image, and then continue adding pixels to the line, and checking if the line still represented the points well. This was done by generating an imaginary line between the first point and the point just added. The minimum distance between the pixel and the line horizontally or vertically was calculated, and this was compared to a threshold he set as 1. If it goes above the threshold, then you can add no more to your line, so you can start another until there are no more points to add. As it adds points, it sets them to 0 in the image, so every point can only be added once.
+
+The method I propose is similar in many ways. It too continues adding pixels and checking if a line represents them well. One difference though, is that rather than seeing if any one pixel is too far from the line, it finds if the mean distance from the line is too great. When this occurs, it adds a corner at the point furthest from the line. It also adds a corner at the point where it starts the first line. When it can add no more points, it then looks at an identical copy of the image. It starts at a corner connected to some pixels, and follows along until it is close to another corner. As it travels from corner to corner, it adds lines between the points. This collection of lines will accurately represent the image.
+
+POST PROCESSING
+After vectorization, the image is often far from perfect. There is a common problem of excess vertices, sometimes stray lines, and also lines from noise in the image. A lot of these can be corrected to help the 3D algorithm make the most accurate match.
+One of these problems may be tiny lines from two close vertices. If these occur, found most easily by a small dx and small dy where dx = |x1 - x2| and dy = |y1 - y2|, then the line should be eliminated and the two vertices joined together. Ideally, a new vertex should be placed at the mean location between the two vertices, but by simply deleting one of the vertices, results would still be pretty good.
+
+Another very common problem is extra vertices which aren't really needed to represent the line. These can be found by comparing slopes the lines from one endpoint to the center point, and from the center point to the other end point. If these are close enough, the extra center vertex is deleted, and a line created between the two endpoints.
+
+After all this, if there are any vertices only connected to one line, the easiest approach would be to simply delete the line. However, a more accurate plan would be to follow the slope of the line until it comes close to another vertex. However, this requires a lot of computation, and it may make more sense to simply delete the line.
+
+3D CONVERSION
+POINT MATCHING
+There are two completely different methods of point matching proposed in this project. The first, designed by my uncle, Dr. Peter Stagg, is good for matching points in 2D objects because of its simplicity and computational speed.
+The equation shows how a 2D inverse perspective transform will remove perspective from the image. After this, a bubble sort routine will order the transformed y coordinates of the left and right cameras from least to greatest. Every point with the closest y coordinate is matched. If the y coordinates are similar, they are matched according to the x coordinates.
+
+This method seems to work best when the vertical positions of vertices vary a lot. It sometimes may give incorrect results when some vertical positions are quite similar, especially if the cameras are not perfectly aligned.
+The second method has been designed by myself. It is excellent for 3D objects because it checks accuracy using the 3D calculations themselves. That will almost guarantee that the points are matched correctly. The only drawback is, if there are a lot of points, every combination must be tested, so it may take quite a while to match the points.
+The equation 2D inverse perspective transform is still used. Then two points go through the 2D to 3D transform described, giving the x, y, and z coordinates. After this, a 3D to 2D transform with a 3D perspective transform is used. These coordinates are compared to the original coordinates before the 2D perspective transform. If these are close enough, the points are considered to be matched together correctly.
+
+STEREOSCOPIC DISPARITY
+This is basically how the 3D calculation works. By finding the locations of matching points from two cameras with known angles, the distances to the points in 3D space can be generated. The equation takes into consideration the camera angles (T1 and T2), the x and y coordinates (x1, y1, x2, and y2), the focal length (f), the distance between the each camera and a center point (s), the distance from the lens to rotational axis (d), and the height of the lens (yc).
+When this information is correctly provided, there should be a nice output of x, y, and z values in cm.
+
+
+ANGLE & AREA CALCULATIONS FOR 2D OBJECTS
+While looking at a single face of an object, it is possible to find the angles it needs to be rotated to face the camera, and therefore the amount it has been rotated on the z axis, and x axis (tilt). The equations for doing this are shown.
+It is also not too hard to calculate side lengths - which means area as well - from the information of which points are connected. Assuming they are connected in a clockwise order, the code will calculate the total area of an object by dividing it into triangles with a single shared point.

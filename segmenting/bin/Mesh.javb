@@ -1,0 +1,191 @@
+package image;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.io.File;
+
+import java.awt.*;
+import java.awt.image.*;
+import java.awt.event.*;
+import java.io.*;
+import javax.imageio.*;
+import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+
+
+	//Most compact / useful output format for regionalized image (Comparable datatype)?
+
+public class Mesh implements Comparable {
+	private ArrayList<double[]> points;
+	private ArrayList<int[]> faces;
+	private int index;
+	private double threshold;
+	protected static PrintStream out;
+	private int pointsAdded;
+	private Color color;
+	
+	public Mesh() {
+		points = new ArrayList<double[]>();
+		faces = new ArrayList<int[]>();
+		index = 0;
+		threshold = Math.PI/2;
+		try {
+		out = new PrintStream(new File("output.an8"));
+		}
+		catch (Exception e) {
+
+		}
+		color = Color.red;
+	}
+	public Mesh(int thresh) {
+		this();
+		//threshold = thresh;
+	}
+	public void addFace(int[] pointIndices) {
+		faces.add(pointIndices);
+	}
+	public void startFace() {
+		pointsAdded = 0;
+	}
+	public void endFace() {
+		// Seal to last point to first point
+		int size = points.size();
+		if(size - index > 2 && pointsAdded > 3) {
+			int[] newFace = new int[size-index+1];
+			for(int i = index; i < size; i++)
+				newFace[i-index] = i;
+			newFace[size-index] = index;
+			addFace(newFace);
+			System.out.println("Closed " + pointsAdded + " -gon");
+		}
+		index = points.size();
+	}
+	public boolean addToFace(double[] coords) {
+		pointsAdded++;
+		// See if point already exists in face
+		int size = points.size();
+		for(int i = index; i < size; i++)
+			if(coords.equals(points.get(i))) return false;
+		// See if point is on same line as previous points
+		if(size-index > 1) {
+			double[] p1 = points.get(size-2);
+			double[] p2 = points.get(size-1);
+			double slopeAngle;
+			slopeAngle = Math.atan((p1[1]-p2[1])/(p1[0]-p2[0]));
+			if(slopeAngle > Math.PI) slopeAngle -= Math.PI;
+			if(Double.isNaN(slopeAngle)) {
+				slopeAngle = Math.PI / 2;
+				//System.out.println("NAN!");
+			}
+
+			double slopeAngle2;
+			slopeAngle2 = Math.atan((p2[1]-coords[1])/(p2[0]-coords[0]));
+			if(slopeAngle2 > Math.PI) slopeAngle2 -= Math.PI;
+			if(Double.isNaN(slopeAngle2)) {
+				slopeAngle2 = Math.PI / 2;
+				//System.out.println("NAN!");
+			}
+
+			double diff = Math.abs(slopeAngle - slopeAngle2); // In range 0 - PI
+			System.out.println(slopeAngle + " <> " + slopeAngle2 + " Diff: " + diff);
+			if(diff < threshold) {
+				//System.out.println("Merged");
+				points.set(size-1, coords);
+				return true;
+			}
+		}
+		points.add(coords);
+		size++;
+		return true;
+	}
+	
+	public void addPoint(double[] coords) {
+		points.add(coords);
+	}
+	public void addFace(double[][] coords) {
+		int[] pointIndices = new int[coords.length];
+		int index = points.size();
+		for(int i = 0; i < coords.length; i++) {
+			points.add(coords[i]);
+			pointIndices[i] = index++;
+		}
+		faces.add(pointIndices);
+	}
+	public int compareTo(Object other) {
+		if(!(other instanceof Mesh)) throw new IllegalArgumentException("Object must be of the class Mesh");
+		else
+			return -1;
+	}
+	
+	public void printPoints()  throws IOException {
+		//System.out.println("Printing points!");
+		a("\npoints {\n");
+		for(int i = 0; i < points.size(); i++) {
+			double[] pt = points.get(i);
+			a("(" + pt[0] + " " + pt[1] + " " + pt[2] + ")\n");
+		}
+		a("}\n");
+	}
+	
+	public void printFaces() throws IOException {
+		//System.out.println("Printing faces!!");
+		a("\nfaces {\n");
+		for(int i = 0; i < faces.size(); i++) {
+			int[] f = faces.get(i);
+			a(f.length + " 0 0 -1 " + "(");
+			for(int j = 0; j < f.length; j++){
+				if(f[j] < 0) throw new IllegalStateException("BAD Number");
+				a(" (" + f[j] + ")");// + " " + f[j][1] + ")");
+			}
+			a(" )\n");
+		}
+		a("}\n");
+	}
+	
+	public void printObject() throws IOException {
+		a("object { \"object01\"\n			  mesh {\n			    name { \"mesh01\" }" +
+		"base {\n			      origin { (0 0 0) }\n			    }\n" +
+		"material { \" -- default --\" }\n			    smoothangle { 45 }\n" +
+		"			    /* 109 points, 277 faces, 0 uvCoords */\n" +
+		"			    /* 16 special edges */			    materiallist {\n" +
+		"materialname { \" -- default --\" }\n			    }");
+		printPoints();
+		printFaces();
+		a("   }\n}");
+		close();
+	}
+	
+    public void a(String text) throws IOException {
+    	if(text == null)
+    		throw new IllegalArgumentException("Null text");
+    	if(out == null)
+    		throw new IllegalStateException("Output buffer not initialized");
+    	out.print(text);
+    }
+    
+    public void close() {
+    	out.close();
+    }
+
+    public ArrayList<double[]> getPoints() {
+    	return points;
+    }
+    
+    public ArrayList<int[]> getFaces() {
+    	return faces;
+    }    
+
+	public void paintComponent(Graphics page) {
+		page.setColor(color);
+		for(int i = 0; i < faces.size(); i++) {
+			int[] pt = faces.get(i);
+			for(int j = 0; j < pt.length-1; j++) {
+			int x1 = (int) points.get(pt[j])[0], x2 = (int) points.get(pt[j+1])[0],
+			    y1 = (int) points.get(pt[j])[1], y2 = (int) points.get(pt[j+1])[1];
+			page.drawLine(x1, y1, x2, y2);
+			}
+		}
+	}
+
+}

@@ -1,0 +1,57 @@
+	
+	public static Mesh toMeshMP (BufferedImage input, int threshold) {
+		//Automatic non-maximal suppression
+		BufferedImage contrast = toGray(suppress(edge3(input)));
+		ImageArray image = new ImageArray(contrast);
+		int[][][] in = image.array;
+		Mesh mesh = new Mesh();
+		MovingPoint m;
+		int height = input.getHeight(), width = input.getWidth();
+
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(gray(contrast.getRGB(x, y)) > threshold && in[x][y][1] > 0) {
+					mesh.startFace();
+					m = new Image().new MovingPoint(x,y);
+					int onStartingSpot = 0;
+					int lastX = x, lastY = y;
+					while(onStartingSpot < 4) {
+						if(m.x == lastX && m.y == lastY) {
+							onStartingSpot++;
+						}
+						else if(m.x == x && m.y == y) {
+							onStartingSpot += 5;
+						}
+						else {
+							lastX = m.x;
+							lastY = m.y;
+							onStartingSpot = 0;
+						}
+						
+						double leftContrast = Double.MAX_VALUE;
+						if(m.getLeft()[1] < height && m.getLeft()[1] >= 0 && m.getLeft()[0] < width && m.getLeft()[0] >= 0)
+							leftContrast = in[m.getLeft()[0]][m.getLeft()[1]][1];
+
+						if(leftContrast < threshold) {
+							m.rotateCCW();
+							m.moveForward();
+						}
+						else {
+							double[] pt = {m.getLeft()[0],m.getLeft()[1],0};
+							mesh.addToFace(pt);
+						
+							double forwardContrast = Double.MAX_VALUE;
+							if(m.getForward()[1] < height && m.getForward()[1] >= 0 && m.getForward()[0] < width && m.getForward()[0] >= 0)
+								forwardContrast= in[m.getForward()[0]][m.getForward()[1]][1];
+							if(forwardContrast < threshold) m.moveForward();
+							else m.rotateCW();
+						}
+						in[m.x][m.y][1] = 0;
+					}
+					mesh.endFace();
+				}
+				in[x][y][1] = 0;
+			}
+		}
+		return mesh;
+	}

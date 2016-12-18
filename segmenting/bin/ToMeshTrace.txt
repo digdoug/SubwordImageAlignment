@@ -1,0 +1,32 @@
+	
+	public static Mesh toMeshTrace(BufferedImage input, int threshold) {
+		ImageArray image = new ImageArray(suppress(sobelColor(input)));
+		Mesh mesh = new Mesh();
+		int height = input.getHeight(), width = input.getWidth();
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(gray(image.array[x][y][0]) > threshold) {
+					mesh.startFace();
+					double[] pt1 = {x,y,0};
+					mesh.addToFace(pt1);
+					int a = x, b = y;
+					image.setRGB(a,b,0);
+					while(true) {
+						int[] nextPt = closest(image, a, b, 2);
+						if((nextPt[0] == 0 && nextPt[1] == 0) || gray(image.array[a+nextPt[0]][b+nextPt[1]][0]) <= threshold)
+							nextPt = highest(image, a, b, 2);
+						if(nextPt[0] == 0 && nextPt[1] == 0)
+							break;
+						a += nextPt[0];
+						b += nextPt[1];
+						double[] pt = {a,b,0};
+						mesh.addToFace(pt);
+						image.setRGB(a,b,0);
+					}
+					mesh.endFace();
+				}
+				image.setRGB(x,y,0);
+			}
+		}
+		return mesh;
+	}

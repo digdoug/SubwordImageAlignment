@@ -1,0 +1,105 @@
+	public static void traceVectors (BufferedImage input) {
+		img = new ImageArray(input);
+		try {
+			JFileChooser chooser = new JFileChooser();
+			int save = chooser.showSaveDialog(null);
+			if (save == JFileChooser.APPROVE_OPTION) {
+				PrintWriter output = new PrintWriter(chooser.getSelectedFile());
+				int points = 0, edges = 0;
+				//int[][] point = new int[img.width*img.height][2], edge = new int[img.width*img.height][2];
+				PointList point = new PointList();
+				EdgeList edge = new EdgeList();
+				for (int x = 0; x<input.getWidth()-1; x++) {
+					for (int y = 0; y<input.getHeight()-1; y++) {
+						if(new Color(input.getRGB(x,y)).getRed() > 10) {
+							boolean first = true;
+							points++;
+							point.add(new Point(x, -y));
+							//point[points-1][0] = x;
+							//point[points-1][1] = -y;
+							int a = x, b = y;
+							Point start = point.current, end = start;
+							double slope = 0;
+							while(true) {
+								int[] close=closest(a,b,1);
+								if(!(close[0] == 0 && close[1] == 0) && img.array[a+close[0]][b+close[1]][1] > -1 && new Color(input.getRGB(a+close[0],b+close[1])).getRed() > 7) {
+									a += close[0];
+									b += close[1];
+									img.array[a][b][1] = -1;
+
+									if(first) {
+										point.add(new Point(a,-b));
+										points++;
+									}
+									if(!first) { // && Math.abs(point[points-1][0] - point[points-2][0]) < 4 && Math.abs(point[points-1][1] - point[points-2][1])<4){
+										
+										// Traverse current line and check for deviations
+										//point.current = start;
+										//double avgSlope = 0;
+										//int pointsInLine = 1;
+										//while(point.current != null && point.current.next != null) {
+										//	avgSlope += Point.slope(point.current, point.current.next);
+										//	if(point.current.next.next == null)
+										//		end = point.current;
+										//	point.current = point.current.next;
+										//	pointsInLine++;
+										//} 
+										//if(Math.abs(Point.slope(point.current, end) - avgSlope/(pointsInLine-1)) < .5) {
+											//slope = (Point.slope(point.current, end) + avgSlope)/pointsInLine;
+											points++;
+											point.add(new Point(a,-b));
+											edge.add(new Edge(points-1, points -2));
+											edges++;
+										//}
+									}
+									else
+										first = false;
+								}
+								else
+									break;
+							}
+							img.array[x][y][1] = -1;
+						}
+						else {
+
+						}
+					}
+				}
+				
+				double theta = 0;
+
+				
+				output.println("object { \"Vector\"" +
+						"\n      material { \"-- default --\" }" +
+						"\n   mesh {\n       name { \"Vector\" }" +
+						"\n      material { \" -- default --\" }\n    materiallist {\n    materialname { \" -- default --\" }\n    }\n");
+					    
+				if(points > 0) {
+					output.println("      points {");
+					//for(int i = 0; i < points; i++) {
+					point.current = point.start;
+					while(point.current != null) {
+						output.println("         " + point.current);
+						point.current = point.current.next;
+					}
+					//}
+
+					output.println("      }");
+				}
+				if(edges >0) {
+					output.println("      edges {");
+					//for(int i = 0; i < edges; i++) {
+					edge.current = edge.start;
+					while(edge.current != null) {
+						output.println("         " + edge.current);
+						edge.current = edge.current.next;
+					}
+					//}
+					output.println("      }");	
+				}
+				output.println("   }\n}");
+				output.close();
+			}
+		}
+		catch (IOException exception) {}
+	}

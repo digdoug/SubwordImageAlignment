@@ -1,0 +1,163 @@
+	public static Mesh toMesh (BufferedImage input, int threshold) {
+		//Mark each point by region : ideal constant density output map with matter points representing each region
+		Mesh output = new Mesh();
+
+		double maxVal = 0.1;
+		int DONE = 0xFFFFFFFF;
+		int height = input.getHeight(), width = input.getWidth();
+		int pointIndex = 0;
+		BufferedImage in = new BufferedImage(input.getWidth()+2, input.getHeight()+2, input.getType());
+		for(int x = 0; x < in.getWidth(); x++) {
+			for(int y = 0; y < in.getHeight(); y++) {
+				in.setRGB(x, y, DONE);
+			}
+		}
+		for(int x = 0; x < input.getWidth(); x++) {
+			for(int y = 0; y < input.getHeight(); y++) {
+				in.setRGB(x+1, y+1, input.getRGB(x,y));
+			}
+		}
+		for (int x = 0; x<width; x++) {
+			for (int y = 0; y<height; y++) {
+				if(input.getRGB(x, y) != DONE) {
+				output.startFace();
+				int[] rdir = {0,-1};
+				int[] bdir = {1,0};
+				LinkedList points = new LinkedList();
+				int a = x, b = y;
+				int colorNum = 0;
+				int turnct = 0;
+					while(turnct < 5) {
+						if(rdir[0] == rdir[1] || bdir[0] == bdir[1]) throw new IllegalStateException();
+						//if(a < height && a >= 0 && b < width && b >= 0 && img.getRGB(a+bdir[0], b+bdir[1]) != DONE)
+						if(input.getRGB(a, b) != DONE)
+							colorNum = in.getRGB(a+1,b+1);
+						else {
+							int rdtmp = rdir[0];
+							rdir[0] = -rdir[1];
+							rdir[1] = -rdtmp;
+							int bdtmp = bdir[0];
+							bdir[0] = -bdir[1];
+							bdir[1] = -bdtmp;
+							turnct++;
+						}
+							
+						int[][] leftForward = {{a+rdir[0], b+rdir[1]},{a+bdir[0], b+bdir[1]}};
+						Color color = new Color(colorNum);
+						int red = color.getRed(), green = color.getGreen(), blue = color.getBlue();
+						double[] colorArray = {red, green, blue};
+						int right, bottom, corner;
+						if(leftForward[0][1] < height && leftForward[0][1] >= 0 && leftForward[0][0] < width && leftForward[0][0] >= 0)
+							right = in.getRGB(leftForward[0][0]+1, leftForward[0][1]+1);
+						else
+							right = DONE;
+						double[] ra = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+						if(right != DONE) {
+							Color rcol = new Color(right);
+							double[] rd = {rcol.getRed(), rcol.getGreen(), rcol.getBlue()};
+							ra = rd;
+						}
+						double rdist = distance(colorArray, ra);
+						
+						// Move right if path is clear
+						if(rdist < threshold && input.getRGB(leftForward[0][0], leftForward[0][1]) != DONE) { // ? 
+							a = leftForward[0][0];
+							b = leftForward[0][1];
+						}
+						else {
+							if(leftForward[1][1] < height && leftForward[1][1] >= 0 && leftForward[1][0] < width && leftForward[1][0] >= 0)
+								bottom = in.getRGB(leftForward[1][0]+1, leftForward[1][1]+1);
+							else
+								bottom = DONE;
+							int[] rc = {a+rdir[0]+bdir[0], b+rdir[1]+bdir[1]}; 
+							if(rc[1] < height && rc[1] >= 0 && rc[0] < width && rc[0] >= 0)
+								corner = in.getRGB(rc[0]+1, rc[1]+1);
+							else
+								corner = DONE;
+							double[] ba = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+							double[] ca = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+							if(bottom != DONE) {
+								Color bcol = new Color(bottom);
+								double[] bd = {bcol.getRed(), bcol.getGreen(), bcol.getBlue()};
+								ba = bd;		
+							}
+							if(corner != DONE) {
+								Color ccol = new Color(bottom);
+								double[] cd = {ccol.getRed(), ccol.getGreen(), ccol.getBlue()};
+								ca = cd;		
+							}
+							double bdist = distance(colorArray, ba);
+							double cdist = distance(colorArray, ca);
+							
+							//Right point is valid high contrast edge
+							
+							double[] pt = {a+rdir[0]/2,-(b+rdir[1]/2),0};
+							if(!output.addToFace(pt)) break;
+							try {
+							input.setRGB(a+rdir[0], b+rdir[1], DONE);
+							}
+							catch(ArrayIndexOutOfBoundsException e) {}
+
+							if(right != DONE)
+								input.setRGB(leftForward[0][0], leftForward[0][1], DONE);
+							// .X    |   <
+							// X   <-|    v
+							// Cornered; turn CCW
+							if(bdist > threshold) {						
+								//Bottom point is valid high contrast edge
+								double[] ptb = {a+bdir[0]/2,-(b+bdir[1]/2),0};
+								if(!output.addToFace(ptb)) break; 
+								try {
+								input.setRGB(a+bdir[0], b+bdir[1], DONE);
+								}
+								catch(ArrayIndexOutOfBoundsException e) {}
+								
+								// - is ccw, + cw
+								int rdtmp = rdir[0];
+								rdir[0] = -rdir[1];
+								rdir[1] = -rdtmp;
+								int bdtmp = bdir[0];
+								bdir[0] = -bdir[1];
+								bdir[1] = -bdtmp;
+								
+								
+								if(bottom != DONE)
+									input.setRGB(leftForward[1][0], leftForward[1][1], DONE);
+	
+							}
+							// Concave edge; turn CW
+							else if(cdist > threshold) {
+								//a = rc[0];
+								//b = rc[1];
+								int rdtmp = rdir[0];
+								rdir[0] = rdir[1];
+								rdir[1] = rdtmp;
+								int bdtmp = bdir[0];
+								bdir[0] = bdir[1];
+								bdir[1] = bdtmp;
+							}
+							// Continuous right edge; drop down
+							else if (input.getRGB(a+bdir[0], b+bdir[1]) != DONE){
+								a += bdir[0];
+								b += bdir[1];
+							}
+							else {
+								break;
+							}
+						}
+						input.setRGB(a, b, DONE);
+						if(a == x && b == y) break;
+					}
+					int size = points.size();
+					int[] indices = new int[size];
+					for(int i = 0; i < size; i++) {
+						indices[i] = pointIndex+i;
+					}
+					output.endFace();
+					pointIndex += points.size();
+				}
+				input.setRGB(x, y, DONE);
+			}
+		}
+		return output;
+	}
