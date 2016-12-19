@@ -1,6 +1,6 @@
 I wrote this during the summer of 2016 at BYU.
 
-This is a project to come up with an effective method to align to word images on matching n-grams using dp-warping. This can help generate more accurate training data.
+This is a project to come up with an effective method to align to word images on matching n-grams using dynamic time warping. This can help generate more accurate training data.
 
 This is still in the birthing stages of development.
 
